@@ -1,0 +1,39 @@
+[tool.uv]
+managed = true
+
+[tool.mypy]
+allow_redefinition = true
+disable_error_code = ["no-redef"]
+
+[[tool.mypy.overrides]]
+module = "zstandard.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pipebomb"
+version = "1.0.0"
+description = "You just got mailed a pipe bomb!"
+requires-python = ">=3.12, <3.14"
+dependencies = [
+    "cryptography>=49.0.0",
+    "zstandard>=0.25.0",
+    "nest_asyncio>=1.6.0",
+]
+readme = "README.md"
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy"
+]
+test = [
+    "pytest",
+    "pytest-asyncio"
+]
