@@ -1,5 +1,5 @@
 import os
-from typing import Any, Never, Protocol, Sequence, TypeAlias, TypeVar, Literal, Callable
+from typing import Any, Generic, Never, Protocol, Sequence, TypeAlias, TypeVar, Literal, Callable
 import socket
 
 DEFAULT_UNIX_SOCKET_PATH: str
@@ -85,6 +85,7 @@ class UnixSocketFactory(SocketFactory[UnixSocket]):
     def prepare_bind(self, sock: UnixSocket, bind_address: SocketAddress) -> None: ...
     def resolve_path(self, address: str) -> str: ...
 
+# Factories for a simple builtin is crazy
 class DictFactory[DictT_co](Protocol):
     """
     The main protocol contract for dictionary factories
@@ -100,8 +101,12 @@ class DictFactory[DictT_co](Protocol):
     def __contains__(self, key: Any) -> bool: ...
     def __len__(self) -> int: ...
     def clear(self) -> None: ...
+    
+KT = TypeVar("KT")
+VT = TypeVar("VT")
 
-class FactoryDict(dict):
+
+class FactoryDict(dict[KT, VT], Generic[KT, VT]):
     """
     Its literally just a dict.
 
@@ -109,9 +114,9 @@ class FactoryDict(dict):
 
     Heres the real dict if you read the docstring above me
     """
-    def __init__(self, db_id, *args, **kwargs): ...
+    def __init__(self, db_id: DatabaseId, *args, **kwargs): ...
 
-# Consistancy got the best of me
+# Consistency got the best of me
 class DictDictionaryFactory(DictFactory[dict]):
     """
     DictDictionaryFactory?

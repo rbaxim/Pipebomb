@@ -3,7 +3,7 @@ import socket
 import asyncio
 from typing import Optional, Sequence, TypeAlias, Union, overload
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from pipebomb.impl import SocketAddress, SocketFactory, dict_factory, tcp_server_factory
+from pipebomb.impl import DictFactory, FactoryDict, SocketAddress, SocketFactory, dict_factory, tcp_server_factory
 from pipebomb.utils import Request, Response
 from _collections_abc import dict_keys, dict_values
 
@@ -46,9 +46,9 @@ class Client(metaclass=ClientMeta):
     rx_nonce: int
     tx_nonce: int
 
-ClientDB: TypeAlias = dict[str, Client]
-AddressBook: TypeAlias = dict[str, str]
-DB: TypeAlias = dict[bytes, bytes]
+ClientDB: TypeAlias = FactoryDict[str, Client]
+AddressBook: TypeAlias = FactoryDict[str, str]
+DB: TypeAlias = FactoryDict[bytes, bytes]
 
 class ServerMeta(type):
     def __dir__(cls):
@@ -70,7 +70,7 @@ class Server(metaclass=ServerMeta):
         port=9193,
         password=b"very_secure_password",
         sock: SocketFactory = tcp_server_factory,
-        dictionary=dict_factory,
+        dictionary: DictFactory = dict_factory,
         keep_dead_sessions=False,
     ) -> None:
         """

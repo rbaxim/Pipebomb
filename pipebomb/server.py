@@ -15,7 +15,9 @@ from pipebomb.utils import (  # type: ignore
     ACK,  # pyright: ignore[reportAttributeAccessIssue]
 )
 from pipebomb.impl import (
+    FactoryDict,
     SocketAddress,
+    SocketFactory,
     dict_factory,
     tcp_server_factory,
     parse_address,
@@ -76,8 +78,8 @@ class NewClientTicketMeta(type):
         return ["addresses_owned", "uuid", "inbox", "outbox"]
 
 
-AddressBook: TypeAlias = dict[str, str]
-DB: TypeAlias = dict[bytes, bytes]
+AddressBook: TypeAlias = FactoryDict[str, str]
+DB: TypeAlias = FactoryDict[bytes, bytes]
 
 
 @dataclass
@@ -119,7 +121,7 @@ class Client(metaclass=ClientMeta):
     active: bool
 
 
-ClientDB: TypeAlias = dict[str, Client]
+ClientDB: TypeAlias = FactoryDict[str, Client]
 
 
 def factory_name(factory: Any) -> str:
@@ -170,8 +172,8 @@ class Server(metaclass=ServerMeta):
         logger.debug(f"Using dictionary factory: {dictionary.__name__}")
         self.address = address
         self.port = port
-        self.socket_factory = sock
-        self.socket = sock()
+        self.socket_factory: SocketFactory = sock
+        self.socket: FactorySocket = sock()
         self.db: DB = dictionary("db")  # pyright: ignore[reportCallIssue]
         self.db_lock = asyncio.Lock()
         self.client_db: ClientDB = dictionary("client_db")  # pyright: ignore[reportCallIssue]
@@ -1133,9 +1135,9 @@ async def deserialize(
         table_of_v.append(table_of_v_data[offset : offset + length])
         offset += length
 
-    db: DB = {}
-    address_book: AddressBook = {}
-    client_db: ClientDB = {}
+    db: DB = FactoryDict("db")
+    address_book: AddressBook = FactoryDict("address_book")
+    client_db: ClientDB = FactoryDict("client_db")
 
     pending_db_key: bytes | None = None
     pending_address: str | None = None
