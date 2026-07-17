@@ -224,7 +224,7 @@ def err_to_human_readable(err: int | bytes) -> str:
         case 4:
             return "Invalid command"
         case 5:
-            return "Key does not exist"
+            return "Key does not exist or the key already exists"
         case 6:
             return "Invalid value"
         case 7:

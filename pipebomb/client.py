@@ -84,6 +84,8 @@ class RawClientMeta(type):
     def __dir__(cls):
         return ["__init__", "connect", "send", "receive"]
 
+class InvalidRelogUUID(UserWarning):
+    pass
 
 class RawClient(metaclass=RawClientMeta):
     __slots__ = (
@@ -235,7 +237,7 @@ class RawClient(metaclass=RawClientMeta):
 
         if ack != ACK:
             logger.warning("Invalid Relog UUID")
-            warnings.warn("Invalid Relog UUID")
+            warnings.warn("Invalid Relog UUID", InvalidRelogUUID)
 
         logger.info(f"Connected to {socket_address}")
 

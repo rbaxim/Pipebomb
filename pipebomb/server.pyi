@@ -86,9 +86,12 @@ class Server(metaclass=ServerMeta):
         """
         ...
 
-    async def start(self) -> None:
+    async def start(self, client_accepters: Optional[int] = 1) -> None:
         """
         Starts the pipebomb server
+        
+        Args:
+            client_accepters (int, optional): The number of client accepters to start. Defaults to 1.
         """
         ...
 
@@ -199,6 +202,19 @@ class Server(metaclass=ServerMeta):
 
         Raises:
             ValueError: If the uuid is not 36 characters long, if the client is not in the client db
+        """
+        
+    async def apply_client_state(self, client_ticket: NewClientTicket, strict=True) -> None:
+        """
+        Applies a new client state
+        
+        Args:
+            client_ticket (NewClientTicket): The client ticket to apply
+            strict (bool, optional): Whether to raise an error if a key is not in the address book
+            
+        Raises:
+            ValueError: If the uuid is not 36 characters long, if the client is not in the client db,
+                If a key does not exist
         """
 
     async def add_key(self, key: str, uuid: str) -> None:

@@ -34,7 +34,6 @@ from hmac import compare_digest
 import struct
 import nest_asyncio  # type: ignore
 
-
 logger = logging.getLogger(__name__)
 logger.log(logging.INFO, "Applying nest_asyncio patches")
 nest_asyncio.apply()
@@ -117,6 +116,7 @@ class Client(metaclass=ClientMeta):
     cipher: Optional[ChaCha20Poly1305]
     rx_nonce: int
     tx_nonce: int
+    active: bool
 
 
 ClientDB: TypeAlias = dict[str, Client]
@@ -136,7 +136,7 @@ class Server(metaclass=ServerMeta):
         2: bytes([00, 69, 82, 82, 2]),  # invalid packet
         3: bytes([00, 69, 82, 82, 3]),  # invalid crc32
         4: bytes([00, 69, 82, 82, 4]),  # invalid command
-        5: bytes([00, 69, 82, 82, 5]),  # key does not exist
+        5: bytes([00, 69, 82, 82, 5]),  # Key does not exist or the key already exists
         6: bytes([00, 69, 82, 82, 6]),  # invalid value
         7: bytes([00, 69, 82, 82, 7]),  # uuid does not exist
     }
@@ -182,7 +182,7 @@ class Server(metaclass=ServerMeta):
         self.tasks: list[asyncio.Task] = []
         self.keep_dead_sessions = keep_dead_sessions
 
-    async def start(self):
+    async def start(self, client_accepters=1):
         bind_address = self.socket_factory.resolve_bind_address(
             self.socket, self.address, self.port
         )
@@ -190,7 +190,8 @@ class Server(metaclass=ServerMeta):
         self.socket.bind(bind_address)
         self.socket.listen()
         logger.info(f"Starting server on {self.socket.factory_address()}")
-        self.tasks.append(asyncio.create_task(self.accept_clients()))
+        for _ in range(client_accepters):
+            self.tasks.append(asyncio.create_task(self.accept_clients()))
 
     def __getitem__(self, key):
         asyncio.get_event_loop().run_until_complete(self.db_lock.acquire())
@@ -357,6 +358,7 @@ class Server(metaclass=ServerMeta):
                             cipher=cipher,
                             tx_nonce=tx_nonce,
                             rx_nonce=rx_nonce,
+                            active=True
                         )
 
                         self.client_db[uuid] = client
@@ -386,6 +388,7 @@ class Server(metaclass=ServerMeta):
                         cipher=cipher,
                         tx_nonce=tx_nonce,
                         rx_nonce=rx_nonce,
+                        active=True
                     )
 
                     self.client_db[uuid] = client
@@ -588,7 +591,7 @@ class Server(metaclass=ServerMeta):
                         await event_loop.sock_sendall(
                             client_socket,
                             construct_packet(
-                                self.ERR_DISPATCH[7],
+                                self.ERR_DISPATCH[5],
                                 self.client_db[uuid].cipher,  # type: ignore
                                 self.client_db[uuid].tx_nonce,
                                 self.compressor,
@@ -868,6 +871,7 @@ class Server(metaclass=ServerMeta):
             None,
             0,
             0,
+            active=False
         )
         self.client_db[client_ticket.uuid] = client
 
@@ -910,9 +914,34 @@ class Server(metaclass=ServerMeta):
             del self.address_book[key]
         del self.client_db[uuid]
 
+    async def apply_client_state(self, client_ticket: NewClientTicket, strict=True):
+        logger.info("Applying a new client state")
+        uuid = client_ticket.uuid
+        if len(uuid) != 36:
+            raise ValueError("UUID must be 36 characters long")
+        if uuid not in self.client_db:
+            raise ValueError("Client not in client db. Use add_client first.")
+        client = self.client_db[uuid]
+        client.inbox = client_ticket.inbox
+        async with client.outbox_lock:
+            client.outbox = client_ticket.outbox
+            
+        for key in client_ticket.addresses_owned:
+            if key not in self.address_book:
+                if strict:
+                    logger.error(f"Key {key} not in address book")
+                    raise ValueError("Key not in address book")
+                else:
+                    logger.warning(f"Key {key} not in address book.")
+                    self.address_book[key] = uuid
+
+        client.addresses_owned = client_ticket.addresses_owned
+
     async def add_key(self, key: str, uuid: str):
         if len(uuid) != 36:
             raise ValueError("UUID must be 36 characters long")
+        if key in self.address_book:
+            raise ValueError("Key already exists")
         self.address_book[key] = uuid
         try:
             self.client_db[uuid].addresses_owned.append(key)
@@ -1150,6 +1179,7 @@ async def deserialize(
                 cipher=None,
                 rx_nonce=0,
                 tx_nonce=0,
+                active=False
             )
 
         elif field_type == 0x31:
