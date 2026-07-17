@@ -20,6 +20,27 @@ exclude_dirs = [".venv", "tests", "dist"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+should_use_gsyncio = true
+
+[tool.hatch.build.targets.wheel]
+exclude = [
+  "/.github",
+  "/tests",
+  "/.gitignore",
+  "/hatch_build.py",
+  "/README.md",
+  "/pyproject.toml",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.github",
+  "/tests",
+  "/.gitignore",
+]
+
 [project]
 name = "pipebomb"
 version = "1.0.0"

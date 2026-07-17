@@ -5,6 +5,7 @@ from pipebomb.utils import (  # type: ignore
     construct_packet,  # pyright: ignore[reportAttributeAccessIssue]
     extract_packet_frame,  # pyright: ignore[reportAttributeAccessIssue]
     err_to_human_readable,
+    run_task_async,
     Request,
     Response,
     ACK,  # pyright: ignore[reportAttributeAccessIssue]
@@ -84,8 +85,10 @@ class RawClientMeta(type):
     def __dir__(cls):
         return ["__init__", "connect", "send", "receive"]
 
+
 class InvalidRelogUUID(UserWarning):
     pass
+
 
 class RawClient(metaclass=RawClientMeta):
     __slots__ = (
@@ -241,7 +244,7 @@ class RawClient(metaclass=RawClientMeta):
 
         logger.info(f"Connected to {socket_address}")
 
-        asyncio.create_task(self.handle_connection(self.socket))
+        run_task_async(self.handle_connection, self.socket)
 
     async def handle_connection(self, socket):
         event_loop = asyncio.get_event_loop()

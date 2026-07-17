@@ -1,9 +1,15 @@
+"""
+Pipebomb Utils
+"""
+
 import struct
-from typing import Sequence, TypeAlias
+import threading
+from typing import Sequence, TypeAlias, Callable, Any
 from zlib import crc32
 from dataclasses import dataclass
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+import asyncio
 import logging
 from zstandard import ZstdCompressor, ZstdDecompressor  # pyright: ignore[reportMissingImports]
 
@@ -235,4 +241,69 @@ def err_to_human_readable(err: int | bytes) -> str:
             return "Unknown error"
 
 
-__all__: Sequence[str] = ["err_to_human_readable", "Request", "Response"]
+_gsyncio_available: bool = False
+_gsyncio_task_id_counter: int = 0
+_gsyncio_lock: threading.Lock = threading.Lock()
+_gsyncio_events: dict[int, asyncio.Event] = {}
+
+
+def _init_gsyncio():
+    global _gsyncio_available
+    try:
+        import pipebomb.gsyncio as gsy
+
+        if hasattr(gsy, "load_go_library"):
+            _gsyncio_available = True
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+
+def run_task_async(
+    callback: Callable[..., Any], *args: Any, task_id: int | None = None, **kwargs: Any
+) -> asyncio.Task:
+    if asyncio.iscoroutinefunction(callback):
+        return asyncio.create_task(callback(*args, **kwargs))
+
+    if _gsyncio_available:
+        event = asyncio.Event()
+
+        def wrapped():
+            try:
+                callback(*args, **kwargs)
+            except Exception:
+                pass
+            finally:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(event.set)
+                else:
+                    event.set()
+
+        global _gsyncio_task_id_counter
+
+        with _gsyncio_lock:
+            tid = task_id if task_id is not None else _gsyncio_task_id_counter
+            _gsyncio_task_id_counter += 1
+
+        _gsyncio_events[tid] = event
+        import pipebomb.gsyncio as gsy
+
+        gsy.StartGoTask(wrapped, tid)
+
+        async def _await_wrapper():
+            await event.wait()
+
+        return asyncio.create_task(_await_wrapper())
+    else:
+        return asyncio.create_task(asyncio.to_thread(callback, *args, **kwargs))
+
+
+_init_gsyncio()
+
+
+__all__: Sequence[str] = [
+    "err_to_human_readable",
+    "Request",
+    "Response",
+    "run_task_async",
+]

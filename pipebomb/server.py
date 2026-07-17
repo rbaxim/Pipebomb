@@ -10,6 +10,7 @@ from pipebomb.utils import (  # type: ignore
     construct_packet,  # pyright: ignore[reportAttributeAccessIssue]
     extract_packet_frame,  # pyright: ignore[reportAttributeAccessIssue]
     err_to_human_readable,
+    run_task_async,
     Request,
     Response,
     ACK,  # pyright: ignore[reportAttributeAccessIssue]
@@ -193,7 +194,7 @@ class Server(metaclass=ServerMeta):
         self.socket.listen()
         logger.info(f"Starting server on {self.socket.factory_address()}")
         for _ in range(client_accepters):
-            self.tasks.append(asyncio.create_task(self.accept_clients()))
+            self.tasks.append(run_task_async(self.accept_clients))
 
     def __getitem__(self, key):
         asyncio.get_event_loop().run_until_complete(self.db_lock.acquire())
@@ -299,7 +300,7 @@ class Server(metaclass=ServerMeta):
 
                 if password == 3 or password == 2:
                     logger.warning(
-                        f"Rejected {client_address} due to handshake failure. Error code {password}: {err_to_human_readable(password)}"
+                        f"Rejected {client_address} due to handshake failure. Error code {password}: {err_to_human_readable(password)}"  # pyright: ignore[reportArgumentType]
                     )
                     client_socket.close()
                     continue
@@ -360,7 +361,7 @@ class Server(metaclass=ServerMeta):
                             cipher=cipher,
                             tx_nonce=tx_nonce,
                             rx_nonce=rx_nonce,
-                            active=True
+                            active=True,
                         )
 
                         self.client_db[uuid] = client
@@ -390,7 +391,7 @@ class Server(metaclass=ServerMeta):
                         cipher=cipher,
                         tx_nonce=tx_nonce,
                         rx_nonce=rx_nonce,
-                        active=True
+                        active=True,
                     )
 
                     self.client_db[uuid] = client
@@ -415,7 +416,7 @@ class Server(metaclass=ServerMeta):
                 logger.info(f"New client connected: {client_address}")
 
                 self.tasks.append(
-                    asyncio.create_task(self.handle_client(client_socket, uuid))
+                    run_task_async(self.handle_client, client_socket, uuid)
                 )
 
             except Exception as e:
@@ -873,7 +874,7 @@ class Server(metaclass=ServerMeta):
             None,
             0,
             0,
-            active=False
+            active=False,
         )
         self.client_db[client_ticket.uuid] = client
 
@@ -927,7 +928,7 @@ class Server(metaclass=ServerMeta):
         client.inbox = client_ticket.inbox
         async with client.outbox_lock:
             client.outbox = client_ticket.outbox
-            
+
         for key in client_ticket.addresses_owned:
             if key not in self.address_book:
                 if strict:
@@ -1181,7 +1182,7 @@ async def deserialize(
                 cipher=None,
                 rx_nonce=0,
                 tx_nonce=0,
-                active=False
+                active=False,
             )
 
         elif field_type == 0x31:

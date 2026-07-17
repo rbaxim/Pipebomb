@@ -1,9 +1,20 @@
+"""
+Pipebomb server
+"""
+
 from dataclasses import dataclass
 import socket
 import asyncio
 from typing import Optional, Sequence, TypeAlias, Union, overload
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from pipebomb.impl import DictFactory, FactoryDict, SocketAddress, SocketFactory, dict_factory, tcp_server_factory
+from pipebomb.impl import (
+    DictFactory,
+    FactoryDict,
+    SocketAddress,
+    SocketFactory,
+    dict_factory,
+    tcp_server_factory,
+)
 from pipebomb.utils import Request, Response
 from _collections_abc import dict_keys, dict_values
 
@@ -89,7 +100,7 @@ class Server(metaclass=ServerMeta):
     async def start(self, client_accepters: Optional[int] = 1) -> None:
         """
         Starts the pipebomb server
-        
+
         Args:
             client_accepters (int, optional): The number of client accepters to start. Defaults to 1.
         """
@@ -203,15 +214,17 @@ class Server(metaclass=ServerMeta):
         Raises:
             ValueError: If the uuid is not 36 characters long, if the client is not in the client db
         """
-        
-    async def apply_client_state(self, client_ticket: NewClientTicket, strict=True) -> None:
+
+    async def apply_client_state(
+        self, client_ticket: NewClientTicket, strict=True
+    ) -> None:
         """
         Applies a new client state
-        
+
         Args:
             client_ticket (NewClientTicket): The client ticket to apply
             strict (bool, optional): Whether to raise an error if a key is not in the address book
-            
+
         Raises:
             ValueError: If the uuid is not 36 characters long, if the client is not in the client db,
                 If a key does not exist

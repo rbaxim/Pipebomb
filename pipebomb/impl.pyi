@@ -1,8 +1,22 @@
+"""
+This is not java btw
+"""
+
 import os
-from typing import Any, Generic, Never, Protocol, Sequence, TypeAlias, TypeVar, Literal, Callable
+from typing import (
+    Any,
+    Generic,
+    Never,
+    Protocol,
+    Sequence,
+    TypeAlias,
+    TypeVar,
+    Literal,
+    Callable,
+)
 import socket
 
-DEFAULT_UNIX_SOCKET_PATH: str
+DEFAULT_UNIX_SOCKET_PATH: Literal["/tmp/pipebomb.sock"]
 SocketAddress: TypeAlias = tuple[str, int] | str
 SocketT = TypeVar("SocketT", bound=socket.socket)
 DictT_co = TypeVar("DictT_co", bound=dict)
@@ -101,10 +115,9 @@ class DictFactory[DictT_co](Protocol):
     def __contains__(self, key: Any) -> bool: ...
     def __len__(self) -> int: ...
     def clear(self) -> None: ...
-    
+
 KT = TypeVar("KT")
 VT = TypeVar("VT")
-
 
 class FactoryDict(dict[KT, VT], Generic[KT, VT]):
     """
@@ -117,6 +130,7 @@ class FactoryDict(dict[KT, VT], Generic[KT, VT]):
     def __init__(self, db_id: DatabaseId, *args, **kwargs): ...
 
 # Consistency got the best of me
+# damn you socket factory
 class DictDictionaryFactory(DictFactory[dict]):
     """
     DictDictionaryFactory?

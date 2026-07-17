@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+
 async def test_ruff(pipebomb_folder: Path):
     proc = await asyncio.create_subprocess_exec(
         "uv",
@@ -19,6 +20,7 @@ async def test_ruff(pipebomb_folder: Path):
             f"ruff check failed with logs:\nSTDOUT:\n    {stdout}\nSTDERR:\n    {stderr}"
         )
 
+
 async def test_mypy(pipebomb_folder: Path):
     proc = await asyncio.create_subprocess_exec(
         "uv",
@@ -35,6 +37,7 @@ async def test_mypy(pipebomb_folder: Path):
         assert False, (
             f"mypy check failed with logs:\nSTDOUT:\n    {stdout}\nSTDERR:\n    {stderr}"
         )
+
 
 async def test_bandit(pipebomb_folder: Path):
     import os

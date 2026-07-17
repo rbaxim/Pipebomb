@@ -134,6 +134,7 @@ class UnixSocketFactory(SocketFactory[UnixSocket]):
             return address
         return self.path
 
+
 # Factories for a simple builtin is crazy
 class DictFactory[DictT_co](Protocol):
     __name__: str
@@ -145,9 +146,11 @@ class DictFactory[DictT_co](Protocol):
     def __contains__(self, key: Any) -> bool: ...
     def __len__(self) -> int: ...
     def clear(self) -> None: ...
-    
+
+
 KT = TypeVar("KT")
 VT = TypeVar("VT")
+
 
 class FactoryDict(dict[KT, VT], Generic[KT, VT]):
     def __init__(self, db_id, *args, **kwargs):

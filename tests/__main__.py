@@ -1,9 +1,15 @@
-from pipebomb.server import NewClientTicket, Server, serialize
+import sys
 import asyncio
 from pathlib import Path
-from pipebomb.utils import Request, Response
 import os
-import sys
+
+rc = os.system("uv build --wheel")
+if rc != 0:
+    print("Failed to build package")
+
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve() / "dist"))
+from pipebomb.server import NewClientTicket, Server, serialize  # noqa: E402
+from pipebomb.utils import Request, Response  # noqa: E402
 
 rc = os.system("uv pip install --group tests")
 if rc != 0:
