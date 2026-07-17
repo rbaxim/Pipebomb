@@ -4,6 +4,7 @@ from pipebomb.server import Server, deserialize, serialize
 from pathlib import Path
 from pipebomb.utils import Request, Response
 
+
 async def test_serialization_deserialization(server_client_tcp: tuple[Server, Client]):
     server, client = server_client_tcp
     await server.start()
@@ -17,15 +18,22 @@ async def test_serialization_deserialization(server_client_tcp: tuple[Server, Cl
     req_uuid = await client.request(uuid, b"Test the serialization", "test")
     await client.respond(uuid, b"Hello World", "test", req_uuid)
     packed = await serialize(server)
-    
+
     await client.close()
-    
+
     res = await deserialize(packed)
-    assert res[0][b"foo"] == b"bar" and res[0][b"1234"] == b"5678" and res[0][b"\x36\x39"] == b"\x34\x32\x30"
-    assert uuid.decode("latin1") in res[2] and "test" in res[2][uuid.decode("latin1")].addresses_owned
+    assert (
+        res[0][b"foo"] == b"bar"
+        and res[0][b"1234"] == b"5678"
+        and res[0][b"\x36\x39"] == b"\x34\x32\x30"
+    )
+    assert (
+        uuid.decode("latin1") in res[2]
+        and "test" in res[2][uuid.decode("latin1")].addresses_owned
+    )
     assert "test" in res[1] and res[1]["test"] == uuid.decode("latin1")
-    
-    
+
+
 async def test_file_serialized():
     server = Server()
     await asyncio.sleep(0.1)

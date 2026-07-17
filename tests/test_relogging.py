@@ -3,14 +3,24 @@ from pipebomb.server import NewClientTicket, Server, deserialize
 from pipebomb.client import Client
 from pipebomb.utils import Request, Response
 from pathlib import Path
-    
+
+
 async def test_relogging_into_preset(server_client_tcp: tuple[Server, Client]):
     sample_uuid = b"a" * 36
     server, client = server_client_tcp
     await server.start()
     queue: asyncio.Queue = asyncio.Queue()
-    await queue.put(Request(sample_uuid, b"key", b"pls write to fd", b"isdjfsdhifusdfh"))
-    await server.add_client(NewClientTicket(sample_uuid.decode("latin1"), ["test"], queue, {b"isdjfsdhifusdfh": Response(b"key", b"okie dokie", b"isdjfsdhifusdfh")})) # pyright: ignore[reportArgumentType]
+    await queue.put(
+        Request(sample_uuid, b"key", b"pls write to fd", b"isdjfsdhifusdfh")
+    )
+    await server.add_client(
+        NewClientTicket(
+            sample_uuid.decode("latin1"),
+            ["test"],
+            queue,
+            {b"isdjfsdhifusdfh": Response(b"key", b"okie dokie", b"isdjfsdhifusdfh")},
+        )
+    )  # pyright: ignore[reportArgumentType]
     await asyncio.sleep(0.1)
     await client.connect(relog_uuid=sample_uuid)
     uuid = await client.whoami()
@@ -18,8 +28,11 @@ async def test_relogging_into_preset(server_client_tcp: tuple[Server, Client]):
     await client.close()
     await asyncio.sleep(0.1)
     await server.stop()
-    
-async def test_relogging_into_serialized_server(server_client_tcp: tuple[Server, Client]):
+
+
+async def test_relogging_into_serialized_server(
+    server_client_tcp: tuple[Server, Client],
+):
     server, client = server_client_tcp
     await server.start()
     await asyncio.sleep(0.1)

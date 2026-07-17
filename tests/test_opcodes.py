@@ -2,6 +2,7 @@ import asyncio
 from pipebomb.client import Client
 from pipebomb.server import Server
 
+
 async def test_opcodes(server_client_tcp: tuple[Server, Client]):
     server, client = server_client_tcp
     await server.start()

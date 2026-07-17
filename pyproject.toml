@@ -12,6 +12,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 
+[tool.bandit]
+skips = ["B110"]
+exclude_dirs = [".venv", "tests", "dist"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -29,11 +33,11 @@ dependencies = [
 readme = "README.md"
 
 [dependency-groups]
-dev = [
-    "ruff",
-    "mypy"
-]
-test = [
+tests = [
     "pytest",
-    "pytest-asyncio"
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+    "bandit[toml]",
+    "bandit-sarif-formatter>=1.1.1",
 ]
