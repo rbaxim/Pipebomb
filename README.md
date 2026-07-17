@@ -325,7 +325,7 @@ Both factories follow simple protocols: a callable returning instances plus help
 
 ## Attribution
 
-If you redistribute MOP or substantial portions of it, you must preserve the LICENSE and NOTICE files as required by Apache 2.0. Visible credit in documentation or UI is appreciated but not required.
+If you redistribute Pipebomb or substantial portions of it, you must preserve the LICENSE and NOTICE files as required by Apache 2.0. Visible credit in documentation or UI is appreciated but not required.
 
 - See [NOTICE](NOTICE).
 
