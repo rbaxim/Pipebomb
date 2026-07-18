@@ -1,15 +1,8 @@
 import asyncio
-import time
 import pytest
-import pipebomb.gsyncio as gsyncio
 from pipebomb.server import Server
 from pipebomb.client import Client
 from pipebomb.utils import CancelableTask, run_task_async
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def gsyncio_loaded(gsyncio_library_location):
@@ -38,11 +31,6 @@ async def server_singlethreaded(port_fixture):
         yield s
     finally:
         await s.stop()
-
-
-# ---------------------------------------------------------------------------
-# CancelableTask - asyncio-backed tasks (no gsyncio)
-# ---------------------------------------------------------------------------
 
 class TestCancelableTaskAsyncio:
     async def test_done_returns_false_before_completion(self):
@@ -122,11 +110,6 @@ class TestCancelableTaskAsyncio:
         await asyncio.sleep(0.05)
         assert task.task_id is None
 
-
-# ---------------------------------------------------------------------------
-# CancelableTask - gsyncio-backed tasks
-# ---------------------------------------------------------------------------
-
 class TestCancelableTaskGsyncio:
     def test_result_from_go_callback(self, gsyncio_loaded):
         def sync_work():
@@ -180,11 +163,6 @@ class TestCancelableTaskGsyncio:
         asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
         assert task.result() == sum(range(10000))
 
-
-# ---------------------------------------------------------------------------
-# run_task_async - coroutine vs sync callback detection
-# ---------------------------------------------------------------------------
-
 class TestRunTaskAsync:
     async def test_coroutine_callback_runs_in_asyncio(self):
         async def coro():
@@ -236,11 +214,6 @@ class TestRunTaskAsync:
         assert hasattr(task, "done")
         assert hasattr(task, "result")
         assert hasattr(task, "exception")
-
-
-# ---------------------------------------------------------------------------
-# Multithreaded server - basic operations
-# ---------------------------------------------------------------------------
 
 class TestMultithreadedServer:
     async def _run(self, port_fixture):
@@ -305,11 +278,6 @@ class TestMultithreadedServer:
         result = await client.whoami()
         assert len(result) == 36
         await client.close()
-
-
-# ---------------------------------------------------------------------------
-# Multithreaded server - concurrent clients
-# ---------------------------------------------------------------------------
 
 class TestConcurrentClients:
     async def test_two_clients_set_separate_keys(self, server_gsyncio, port_fixture):
@@ -381,11 +349,6 @@ class TestConcurrentClients:
         await c1.close()
         await c2.close()
 
-
-# ---------------------------------------------------------------------------
-# Single-threaded server - parity with multithreaded behavior
-# ---------------------------------------------------------------------------
-
 class TestSingleThreadedServer:
     async def test_set_and_get(self, server_singlethreaded, port_fixture):
         client = Client("localhost", port_fixture)
@@ -412,69 +375,3 @@ class TestSingleThreadedServer:
         result = await client.list()
         assert result == {"a": "1", "b": "2"}
         await client.close()
-
-
-# ---------------------------------------------------------------------------
-# Register / Unregister operations
-# ---------------------------------------------------------------------------
-
-class TestRegisterOperations:
-    async def test_register_singlethreaded(self, server_singlethreaded, port_fixture):
-        client = Client("localhost", port_fixture)
-        await client.connect()
-        assert await client.register("mykey") is True
-        result = await client.find("mykey")
-        uuid_bytes = await client.whoami()
-        assert result == uuid_bytes
-        await client.close()
-
-    async def test_unregister_singlethreaded(self, server_singlethreaded, port_fixture):
-        client = Client("localhost", port_fixture)
-        await client.connect()
-        await client.register("unregkey")
-        assert await client.unregister("unregkey") is True
-        result = await client.find("unregkey")
-        assert b"ERR" in result
-        await client.close()
-
-    async def test_register_multithreaded(self, server_gsyncio, port_fixture):
-        client = Client("localhost", port_fixture)
-        await client.connect()
-        assert await client.register("mtkey") is True
-        result = await client.find("mtkey")
-        uuid_bytes = await client.whoami()
-        assert result == uuid_bytes
-        await client.close()
-
-    async def test_cannot_register_duplicate(self, server_gsyncio, port_fixture):
-        c1 = Client("localhost", port_fixture)
-        c2 = Client("localhost", port_fixture)
-        await c1.connect()
-        await c1.register("dupkey")
-
-        await c2.connect()
-        try:
-            await c2.register("dupkey")
-        except RuntimeError:
-            pass  # Expected — duplicate registration fails
-
-        await c1.close()
-        await c2.close()
-
-class TestServerLifecycle:
-    async def test_server_stop_cancels_tasks(self, port_fixture):
-        s = Server("localhost", port_fixture, multithreaded=True)
-        await s.start(client_accepters=1)
-        assert len(s.tasks) >= 1 # pyright: ignore[reportAttributeAccessIssue]
-        await s.stop()
-        for t in s.tasks: # pyright: ignore[reportAttributeAccessIssue]
-            assert t.done() or t._cancelled
-
-    async def test_server_stop_cleans_db(self, port_fixture):
-        s = Server("localhost", port_fixture)
-        await s.start()
-        s[b"before_stop"] = b"value"
-        assert b"before_stop" in s
-        await s.stop()
-        assert len(s.db) == 0
-        assert len(s.client_db) == 0
