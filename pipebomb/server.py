@@ -11,9 +11,12 @@ from pipebomb.utils import (  # type: ignore
     extract_packet_frame,  # pyright: ignore[reportAttributeAccessIssue]
     err_to_human_readable,
     run_task_async,
+    CancelableTask,
     Request,
     Response,
     ACK,  # pyright: ignore[reportAttributeAccessIssue]
+    _gsyncio_available,  # noqa: F401
+    _init_gsyncio
 )
 from pipebomb.impl import (
     FactoryDict,
@@ -158,6 +161,7 @@ class Server(metaclass=ServerMeta):
         "socket_factory",
         "tasks",
         "keep_dead_sessions",
+        "_multithreaded",
     )
 
     def __init__(
@@ -168,7 +172,9 @@ class Server(metaclass=ServerMeta):
         sock=tcp_server_factory,
         dictionary=dict_factory,
         keep_dead_sessions=False,
+        multithreaded: bool = False,
     ) -> None:
+        global _gsyncio_available
         logger.debug(f"Using socket factory: {factory_name(sock)}")
         logger.debug(f"Using dictionary factory: {dictionary.__name__}")
         self.address = address
@@ -182,8 +188,22 @@ class Server(metaclass=ServerMeta):
         self.password = password
         self.compressor = ZstdCompressor(level=9)
         self.decompressor = ZstdDecompressor()
-        self.tasks: list[asyncio.Task] = []
+        self.tasks: list[CancelableTask] = []
         self.keep_dead_sessions = keep_dead_sessions
+        self._multithreaded = multithreaded
+        if not multithreaded:
+            logger.info("Using Asyncio for tasks")
+            _gsyncio_available = False
+        else:
+            _gsyncio_available = _init_gsyncio()
+            if not _gsyncio_available:
+                logger.warning("multithreaded=True but gsyncio is unavailable")
+                self._multithreaded = False
+            else:
+                logger.info("Using Gsyncio for tasks")
+        
+            
+            
 
     async def start(self, client_accepters=1):
         bind_address = self.socket_factory.resolve_bind_address(
@@ -194,7 +214,11 @@ class Server(metaclass=ServerMeta):
         self.socket.listen()
         logger.info(f"Starting server on {self.socket.factory_address()}")
         for _ in range(client_accepters):
-            self.tasks.append(run_task_async(self.accept_clients))
+            if self._multithreaded:
+                self.tasks.append(run_task_async(self.accept_clients))
+            else:
+                task = asyncio.create_task(self.accept_clients())
+                self.tasks.append(CancelableTask(task, None))
 
     def __getitem__(self, key):
         asyncio.get_event_loop().run_until_complete(self.db_lock.acquire())
@@ -247,8 +271,8 @@ class Server(metaclass=ServerMeta):
         logger.debug("Clearing db")
         self.db.clear()
         logger.debug("Cleaning up tasks")
-        for task in self.tasks:
-            task.cancel()
+        for t in self.tasks:
+            t.cancel()
 
     async def accept_clients(self):
         loop = asyncio.get_event_loop()
@@ -415,9 +439,13 @@ class Server(metaclass=ServerMeta):
                 logger.debug(f"Created client object. Client's UUID: {uuid}")
                 logger.info(f"New client connected: {client_address}")
 
-                self.tasks.append(
-                    run_task_async(self.handle_client, client_socket, uuid)
-                )
+                if self._multithreaded:
+                    self.tasks.append(
+                        run_task_async(self.handle_client, client_socket, uuid)
+                    )
+                else:
+                    task = asyncio.create_task(self.handle_client(client_socket, uuid))
+                    self.tasks.append(CancelableTask(task, None))
 
             except Exception as e:
                 logger.exception(f"Error accepting client: {e}")

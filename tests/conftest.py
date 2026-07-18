@@ -10,11 +10,17 @@ current_port = 9193 + int(os.environ.get("TEST_PORT_OFFSET", "0"))
 
 
 @pytest.fixture
-def server_client_tcp():
+def port_fixture():
     global current_port
-    server = Server(sock=tcp_server_factory, port=current_port)
-    client = Client("127.0.0.1", current_port, sock=tcp_factory)
+    p = current_port
     current_port += 1
+    return p
+
+
+@pytest.fixture
+def server_client_tcp(port_fixture):
+    server = Server(sock=tcp_server_factory, port=port_fixture)
+    client = Client("127.0.0.1", port_fixture, sock=tcp_factory)
     return server, client
 
 

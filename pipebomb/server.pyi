@@ -83,6 +83,7 @@ class Server(metaclass=ServerMeta):
         sock: SocketFactory = tcp_server_factory,
         dictionary: DictFactory = dict_factory,
         keep_dead_sessions=False,
+        multithreaded=False
     ) -> None:
         """
         Initialize a new Pipebomb Server instance.
@@ -94,6 +95,7 @@ class Server(metaclass=ServerMeta):
             sock (SocketFactory, optional): The socket factory to use. Defaults to tcp_server_factory.
             dictionary (SocketFactory, optional): The dictionary factory to use. Defaults to dict_factory.
             keep_dead_sessions (bool, optional): Whether to keep dead sessions. Defaults to False.
+            multithreaded (bool, optional): Whether to use gsyncio or not
         """
         ...
 

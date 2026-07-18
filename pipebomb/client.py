@@ -5,7 +5,6 @@ from pipebomb.utils import (  # type: ignore
     construct_packet,  # pyright: ignore[reportAttributeAccessIssue]
     extract_packet_frame,  # pyright: ignore[reportAttributeAccessIssue]
     err_to_human_readable,
-    run_task_async,
     Request,
     Response,
     ACK,  # pyright: ignore[reportAttributeAccessIssue]
@@ -244,7 +243,7 @@ class RawClient(metaclass=RawClientMeta):
 
         logger.info(f"Connected to {socket_address}")
 
-        run_task_async(self.handle_connection, self.socket)
+        asyncio.create_task(self.handle_connection(self.socket))
 
     async def handle_connection(self, socket):
         event_loop = asyncio.get_event_loop()
@@ -360,6 +359,8 @@ class RawClient(metaclass=RawClientMeta):
 
     async def close(self) -> None:
         logger.info(f"Closing connection to {parse_address(self.socket.getpeername())}")
+        if self.cipher is None:
+            raise RuntimeError("Cipher is None")
         packet = construct_packet(
             bytes([0x88]),
             self.cipher,

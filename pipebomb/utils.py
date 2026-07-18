@@ -2,16 +2,19 @@
 Pipebomb Utils
 """
 
+import asyncio
+import os
+from pathlib import Path
 import struct
-import threading
-from typing import Sequence, TypeAlias, Callable, Any
+import sys
+from typing import Sequence, TypeAlias, Callable, Any, Generic, TypeVar
 from zlib import crc32
 from dataclasses import dataclass
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-import asyncio
 import logging
 from zstandard import ZstdCompressor, ZstdDecompressor  # pyright: ignore[reportMissingImports]
+import pipebomb.gsyncio as gsy
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ class RequestMeta(type):
 
 
 @dataclass
-class Request:
+class Request(metaclass=RequestMeta):
     return_uuid: bytes
     key: bytes
     request: bytes
@@ -41,7 +44,7 @@ class ResponseMeta(type):
 
 
 @dataclass
-class Response:
+class Response(metaclass=ResponseMeta):
     key: bytes
     response: bytes
     response_uuid: bytes
@@ -240,65 +243,157 @@ def err_to_human_readable(err: int | bytes) -> str:
         case _:
             return "Unknown error"
 
+T = TypeVar("T")
+
+class CancelableTask(Generic[T]):
+    __slots__ = ("_asyncio_task", "_task_id", "_cancelled")
+
+    def __init__(self, asyncio_task: asyncio.Task[T], task_id: int | None):
+        self._asyncio_task = asyncio_task
+        self._task_id = task_id
+        self._cancelled = False
+
+    @property
+    def task_id(self) -> int | None:
+        return self._task_id
+
+    def cancel(self) -> bool:
+        if self._cancelled:
+            return False
+        self._cancelled = True
+        if self._task_id is not None:
+            try:
+                gsy.CancelGoTask(self._task_id)
+            except (ImportError, RuntimeError):
+                pass
+        return self._asyncio_task.cancel()
+
+    def done(self) -> bool:
+        return self._asyncio_task.done()
+
+    def result(self, timeout: float | None = None) -> T:
+        if timeout is not None:
+            return asyncio.get_event_loop().run_until_complete(
+                asyncio.wait_for(self._asyncio_task, timeout=timeout)
+            )
+        return self._asyncio_task.result()
+
+    def exception(self, timeout: float | None = None) -> BaseException | None:
+        if timeout is not None:
+            asyncio.get_event_loop().run_until_complete(
+                asyncio.wait_for(self._asyncio_task, timeout=timeout)
+            )
+        return self._asyncio_task.exception()
+
 
 _gsyncio_available: bool = False
-_gsyncio_task_id_counter: int = 0
-_gsyncio_lock: threading.Lock = threading.Lock()
-_gsyncio_events: dict[int, asyncio.Event] = {}
 
 
 def _init_gsyncio():
     global _gsyncio_available
-    try:
-        import pipebomb.gsyncio as gsy
-
-        if hasattr(gsy, "load_go_library"):
+    gsyncio_folder = Path(os.path.dirname(__file__), "gsyncio").resolve()
+    dist_folder = (gsyncio_folder.parent.parent / "dist").resolve()
+    if sys.platform.startswith("win"):
+        if (gsyncio_folder / "gsyncio.pyd").exists():
+            gsy.load_go_library(str(gsyncio_folder / "gsyncio.pyd"))
             _gsyncio_available = True
-    except (ImportError, ModuleNotFoundError):
-        pass
+        else:
+            _gsyncio_available = False
+    else:
+        if (gsyncio_folder / "gsyncio.so").exists():
+            gsy.load_go_library(str(gsyncio_folder / "gsyncio.so"))
+            _gsyncio_available = True
+        else:
+            _gsyncio_available = False
+            
+    if sys.platform.startswith("win"):
+        if (dist_folder / "gsyncio.pyd").exists():
+            gsy.load_go_library(str(dist_folder / "gsyncio.pyd"))
+            _gsyncio_available = True
+        else:
+            _gsyncio_available = False
+    else:
+        if (dist_folder / "gsyncio.so").exists():
+            gsy.load_go_library(str(dist_folder / "gsyncio.so"))
+            _gsyncio_available = True
+        else:
+            _gsyncio_available = False
+            
+    logger.debug(f"gsyncio available: {_gsyncio_available}")
+    return _gsyncio_available
 
 
 def run_task_async(
-    callback: Callable[..., Any], *args: Any, task_id: int | None = None, **kwargs: Any
-) -> asyncio.Task:
-    if asyncio.iscoroutinefunction(callback):
-        return asyncio.create_task(callback(*args, **kwargs))
+    callback: Callable[..., T], *args: Any, **kwargs: Any
+) -> CancelableTask[T]:
+    import inspect
+
+    if inspect.iscoroutinefunction(callback):
+        task = asyncio.create_task(callback(*args, **kwargs))
+        return CancelableTask(task, None)
+
+    global _gsyncio_available
 
     if _gsyncio_available:
         event = asyncio.Event()
+        result_holder: list[T | Exception] = [None]  # type: ignore
 
         def wrapped():
             try:
-                callback(*args, **kwargs)
-            except Exception:
-                pass
-            finally:
+                result_holder[0] = callback(*args, **kwargs)
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(event.set)
+                else:
+                    event.set()
+            except Exception as e:
+                result_holder[0] = e
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     loop.call_soon_threadsafe(event.set)
                 else:
                     event.set()
 
-        global _gsyncio_task_id_counter
-
-        with _gsyncio_lock:
-            tid = task_id if task_id is not None else _gsyncio_task_id_counter
-            _gsyncio_task_id_counter += 1
-
-        _gsyncio_events[tid] = event
-        import pipebomb.gsyncio as gsy
-
-        gsy.StartGoTask(wrapped, tid)
-
-        async def _await_wrapper():
+        async def _await_wrapper() -> T:
             await event.wait()
+            if isinstance(result_holder[0], Exception):
+                raise result_holder[0]  # type: ignore
+            return result_holder[0]  # type: ignore
 
-        return asyncio.create_task(_await_wrapper())
+        tid = gsy.get_next_task_id()
+        gsy.StartGoTaskWithResult(wrapped, tid)
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio_task = loop.create_task(_await_wrapper())
+            return CancelableTask(asyncio_task, tid)
+        else:
+            deferred_result: list[asyncio.Task[T]] = [None]  # type: ignore
+
+            def _deferred_create():
+                t = loop.create_task(_await_wrapper())
+                deferred_result[0] = t
+
+            loop.call_soon(_deferred_create)
+            while deferred_result[0] is None:
+                loop.run_until_complete(asyncio.sleep(0))
+            return CancelableTask(deferred_result[0], tid)
     else:
-        return asyncio.create_task(asyncio.to_thread(callback, *args, **kwargs))
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            task = loop.create_task(asyncio.to_thread(callback, *args, **kwargs))
+        else:
+            result_holder2: list[asyncio.Task] = [None]  # type: ignore
 
+            def _deferred_create2():
+                t = loop.create_task(asyncio.to_thread(callback, *args, **kwargs))
+                result_holder2[0] = t
 
-_init_gsyncio()
+            loop.call_soon(_deferred_create2)
+            while result_holder2[0] is None:
+                loop.run_until_complete(asyncio.sleep(0))
+            task = result_holder2[0]
+        return CancelableTask(task, None)
 
 
 __all__: Sequence[str] = [
@@ -306,4 +401,7 @@ __all__: Sequence[str] = [
     "Request",
     "Response",
     "run_task_async",
+    "CancelableTask",
+    "_gsyncio_available",
+    "_init_gsyncio",
 ]
