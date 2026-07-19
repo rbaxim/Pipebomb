@@ -7,21 +7,6 @@ from pathlib import Path
 import sys
 from cffi import FFI # type: ignore
 
-
-def split_path(file_path: Path, target_dir: str):
-    path_obj = Path(file_path)
-    parts = path_obj.parts
-    
-    if target_dir not in parts:
-        raise ValueError(f"Directory '{target_dir}' not found in the path.")
-        
-    idx = parts.index(target_dir)
-    
-    before = Path(*parts[:idx])
-    after = Path(*parts[idx:])
-    
-    return before, after
-
 class DynamicGoBuildHook(BuildHookInterface):
     def initialize(self, version, build_data):
         if not self.config.get("should_use_gsyncio", False):
@@ -32,8 +17,8 @@ class DynamicGoBuildHook(BuildHookInterface):
             return
         
         if self.config.get("compiled_sdist", False) and self.target_name == "wheel":
-            print("[gsyncio Build] WARNING. COMPILING FOR SDIST AND WHEEL CAN CAUSE ISSUES WITH BUILDING")
-            print("    I RECOMMEND ONLY USING THIS PROPERTY IF YOU KNOW WHAT YOU ARE DOING")
+            print("[gsyncio Build] WARNING. COMPILING FOR SDIST AND WHEEL CAN CAUSE ISSUES WITH BUILDING.")
+            print("    THIS IS MEANT FOR DEBUGGING. I RECOMMEND ONLY USING THIS PROPERTY IF YOU KNOW WHAT YOU ARE DOING")
 
         go_binary = shutil.which("go")
 

@@ -8,7 +8,7 @@ A high-performance encrypted IPC microframework based of the post office model f
 
 ## Highlights
 
-- **End-to-end encryption** - X25519 key exchange + HKDF session derivation + ChaCha20-Poly1305 AEAD with perfect forward secrecy
+- **Secure Encryption** - X25519 key exchange + HKDF session derivation + ChaCha20-Poly1305 AEAD + PSK with perfect forward secrecy (Thats TLS 1.3 PSK)
 - **Async-first design** - built on `asyncio` with a producer/consumer message pattern for zero-copy transport
 - **Built-in key-value store** - distributed `dict[bytes, bytes]` accessible over the network from any connected client
 - **Address book & name resolution** - register human-readable keys to discover and address other clients
@@ -323,7 +323,7 @@ When building from source (not via pip/uv index), gsyncio requires:
 - **Go 1.21+** installed and in PATH
 - **CGo enabled** (`CGO_ENABLED=1`) - the Go compiler must be able to call into Python's C API
 
-The hatch build hook (`hatch_build.py`) handles compilation automatically during `uv sync` or `uv build`. If Go is not found, it skips gsyncio compilation and packages a pure-Python fallback (using `asyncio.to_thread()` instead). The compiled shared library is bundled into the wheel at `pipebomb/gsyncio/gsyncio.{so|pyd}`.
+The hatch build hook (`hatch_build.py`) handles compilation automatically during `uv sync` or `uv build`. If Go is not found, it skips gsyncio compilation and packages a pure-Python fallback (using `asyncio.to_thread()` instead). The compiled CFFI shared library is bundled into the wheel at `pipebomb/gsyncio/gsyncio_cffi.{so|pyd}`. The compiled CGo library is at `pipebomb/gsyncio/gsyncio.{so|dll|dylib}`
 
 ## Protocol Reference
 
