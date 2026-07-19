@@ -8,7 +8,7 @@ A high-performance encrypted IPC microframework based of the post office model f
 
 ## Highlights
 
-- **Secure Encryption** - X25519 key exchange + HKDF session derivation + ChaCha20-Poly1305 AEAD + PSK with perfect forward secrecy (Thats TLS 1.3 PSK)
+- **Secure Encryption** - X25519 key exchange + HKDF session derivation + ChaCha20-Poly1305 AEAD + PSK with perfect forward secrecy (That's TLS 1.3 PSK)
 - **Async-first design** - built on `asyncio` with a producer/consumer message pattern for zero-copy transport
 - **Built-in key-value store** - distributed `dict[bytes, bytes]` accessible over the network from any connected client
 - **Address book & name resolution** - register human-readable keys to discover and address other clients
