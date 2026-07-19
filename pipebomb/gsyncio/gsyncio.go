@@ -1,6 +1,7 @@
 package main
 
 /*
+#include <stdbool.h>
 typedef void (*python_cb)(void);
 typedef int (*gil_ensure_cb)(void);
 typedef void (*gil_release_cb)(int);
@@ -124,15 +125,15 @@ func _CancelGoTask(taskId C.int) {
 }
 
 //export _IsCanceled
-func _IsCanceled(taskId C.int) C.int {
+func _IsCanceled(taskId C.int) C.bool {
 	mapMu.Lock()
 	canceled, exists := cancellationMap[int(taskId)]
 	mapMu.Unlock()
 
 	if !exists || canceled {
-		return 1
+		return C.bool(true)
 	}
-	return 0
+	return C.bool(false)
 }
 
 func main() {}

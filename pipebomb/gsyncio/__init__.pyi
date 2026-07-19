@@ -1,5 +1,6 @@
 from typing import Callable, Sequence
 
+NO_GSYNCIO_CFFI: bool = False
 
 def load_go_library(lib: str) -> None: ...
 

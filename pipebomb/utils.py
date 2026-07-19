@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 import logging
 from zstandard import ZstdCompressor, ZstdDecompressor  # pyright: ignore[reportMissingImports]
 import pipebomb.gsyncio as gsy
+from hmac import compare_digest
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,7 @@ def verify_packet(
 
     calculated_checksum = crc32(payload).to_bytes(4, "big")
 
-    if calculated_checksum != checksum:
+    if not compare_digest(calculated_checksum, checksum):
         logger.error(
             f"Checksum mismatch: received {checksum.hex()}, "
             f"calculated {calculated_checksum.hex()}"
@@ -291,36 +292,50 @@ _gsyncio_available: bool = False
 
 def _init_gsyncio():
     global _gsyncio_available
-    gsyncio_folder = Path(os.path.dirname(__file__), "gsyncio").resolve()
-    dist_folder = (gsyncio_folder.parent.parent / "dist").resolve()
+    if gsy.NO_GSYNCIO_CFFI:
+        logger.warning("gsyncio not available")
+        return False
+
+    go_ext = ""
     if sys.platform.startswith("win"):
-        if (gsyncio_folder / "gsyncio.pyd").exists():
-            gsy.load_go_library(str(gsyncio_folder / "gsyncio.pyd"))
-            _gsyncio_available = True
-        else:
-            _gsyncio_available = False
+        go_ext = ".pyd"
+    elif sys.platform.startswith("darwin"):
+        go_ext = ".dylib"
     else:
-        if (gsyncio_folder / "gsyncio.so").exists():
-            gsy.load_go_library(str(gsyncio_folder / "gsyncio.so"))
-            _gsyncio_available = True
-        else:
-            _gsyncio_available = False
-            
-    if sys.platform.startswith("win"):
-        if (dist_folder / "gsyncio.pyd").exists():
-            gsy.load_go_library(str(dist_folder / "gsyncio.pyd"))
-            _gsyncio_available = True
-        else:
-            _gsyncio_available = False
+        go_ext = ".so"
+    found_lib = None
+
+    env_path = os.environ.get("GSYNCIO_PATH")
+    if env_path:
+        candidate = Path(env_path).resolve() / f"gsyncio{go_ext}"
+        if candidate.exists():
+            logger.debug(f"Using gsyncio from {candidate}")
+            found_lib = str(candidate)
+
+    if not found_lib:
+        base = Path(__file__).resolve().parent.parent / "dist"
+        candidate = base / f"gsyncio{go_ext}"
+        if candidate.exists():
+            logger.debug(f"Using gsyncio from {candidate}")
+            found_lib = str(candidate)
+
+    if not found_lib:
+        local_candidate = Path(os.path.dirname(__file__), "gsyncio", f"gsyncio{go_ext}")
+        if local_candidate.exists():
+            logger.debug(f"Using gsyncio from {local_candidate}")
+            found_lib = str(local_candidate)
+
+    if found_lib:
+        logger.info("Found gsyncio")
+        gsy.load_go_library(found_lib)
+        _gsyncio_available = True
     else:
-        if (dist_folder / "gsyncio.so").exists():
-            gsy.load_go_library(str(dist_folder / "gsyncio.so"))
-            _gsyncio_available = True
-        else:
-            _gsyncio_available = False
-            
+        logger.warning("gsyncio not found")
+        _gsyncio_available = False
+
     logger.debug(f"gsyncio available: {_gsyncio_available}")
     return _gsyncio_available
+
 
 
 def run_task_async(
@@ -393,7 +408,7 @@ def run_task_async(
             while result_holder2[0] is None:
                 loop.run_until_complete(asyncio.sleep(0))
             task = result_holder2[0]
-        return CancelableTask(task, None)
+        return CancelableTask(task, -1)
 
 
 __all__: Sequence[str] = [

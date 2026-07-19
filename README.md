@@ -14,7 +14,8 @@ A high-performance encrypted IPC microframework based of the post office model f
 - **Address book & name resolution** - register human-readable keys to discover and address other clients
 - **Inter-client async RPC** - inbox/outbox messaging with request/response correlation via opaque UUIDs
 - **Full state serialization** - compressible binary checkpointing of the entire server state (DB, address book, client sessions) for persistence, hot standby, or crash recovery
-- **Duck-typed factories** - swap transports (TCP ↔ Unix sockets) or storage backends (in-memory dict → Redis, SQLite, etc.) by implementing a single `Protocol`
+- **Duck-typed factories** - swap transports (TCP <-> Unix sockets) or storage backends (in-memory dict -> Redis, SQLite, etc.) by implementing a single `Protocol`
+- **Go-powered multithreaded execution** - optional `gsyncio` backend spawns native Go goroutines for blocking callbacks, bypassing the GIL and scaling to thousands of concurrent clients without Python threading overhead
 
 ## Installation
 
@@ -29,6 +30,8 @@ git clone https://github.com/rbaxim/Pipebomb.git
 cd Pipebomb
 uv sync
 ```
+
+**Note for `multithreaded=True`:** if you plan to use the Go-powered gsyncio backend, ensure `go` is installed and in PATH before running `uv sync`. The hatch build hook compiles the gsyncio shared library automatically during installation.
 
 ## Quick Start
 
@@ -71,7 +74,7 @@ async def main():
 
     # Client B reads the response from its outbox
     response = await client_b.read_outbox(req_uuid)
-    print(response.response.decode("latin1"))  # → Hello World
+    print(response.response.decode("latin1"))  # -> Hello World
 
     await client_a.close()
     await client_b.close()
@@ -184,6 +187,19 @@ srv = server.Server(dict_factory=RedisDictFactory())
 
 ### Server API
 
+Create a server with the `multithreaded` flag to enable Go-powered goroutine execution:
+
+```python
+import pipebomb.server as server
+
+# Default: pure asyncio (single-threaded event loop)
+srv = server.Server()
+
+# Multithreaded: uses gsyncio Go goroutines for client handling
+srv = server.Server(multithreaded=True)
+await srv.start(client_accepters=4)
+```
+
 The server exposes dict-style access for synchronous and simple use:
 
 ```python
@@ -199,7 +215,7 @@ Async methods are also available:
 
 | Method | Description |
 | --- | --- |
-| `await server.start()` | Bind and accept connections. |
+| `await server.start(client_accepters=1)` | Bind and accept connections. Set `client_accepters` to spawn multiple concurrent acceptor tasks for handling connection bursts. |
 | `await server.stop()` | Close socket, clear all data. |
 | `await server.set_db(key, value)` | Async DB write. |
 | `value = await server.get_db(key)` | Async DB read. |
@@ -223,6 +239,91 @@ db, address_book, client_db = await deserialize(data, server=None)
 ```
 
 The serialized format uses a `0x91938038` magic header, Zstandard compression (level 22), and encodes all three internal tables (DB, address book, client state with inboxes/outboxes). Deserialization is lossless.
+
+## Server Modes
+
+Pipebomb runs in two concurrency modes depending on your workload:
+
+**Single-threaded (asyncio mode)** - `multithreaded=False` (default). All client handling runs cooperatively on a single asyncio event loop thread. This is the simplest setup: no Go compiler needed, zero build complexity. Each client connection is handled as an async coroutine that yields control back to the event loop during I/O waits.
+
+**Multithreaded mode** - `multithreaded=True`. Client handling runs in native Go goroutines via gsyncio (see below). Each `accept_clients()` call and each `handle_client()` invocation spawns a separate goroutine that calls back into Python with proper GIL management. This bypasses the GIL entirely for blocking callbacks, allowing true parallel execution of client handlers across all available CPU cores.
+
+### Scaling Connection Acceptance
+
+When starting the server, you can set `client_accepters=N` to spawn N concurrent acceptor tasks:
+
+```python
+server = Server(multithreaded=True)
+await server.start(client_accepters=4)
+```
+
+Each acceptor independently calls `socket.accept()`, so with `N=4` the server can queue up connections across 4 acceptors simultaneously rather than having a single bottleneck at `accept()`. This is useful for handling connection bursts (e.g., when many clients reconnect after a restart). In asyncio mode, `client_accepters` spawns multiple async coroutines on the event loop; in multithreaded mode, each acceptor runs as its own Go goroutine.
+
+### Choosing a Mode
+
+| Server Tier  | Cores | Clients | Recommendation                                                                     |
+| ------------ | ----- | ------- | ---------------------------------------------------------------------------------- |
+| Small / Edge | 4-6   | 8       | Use **asyncio** unless you expect 12+ simultaneous clients                         |
+| Mid-range    | 8     | 16      | **Asyncio** for <16 clients, switch to **gsyncio** above that                      |
+| Production   | 16+   | 32+     | Use **gsyncio** by default - at this scale Go goroutines are worth it from day one |
+
+Rule of thumb: if your server has 16+ cores and you expect more than a handful of clients, just use gsyncio. The overhead of the Go library is negligible compared to the concurrency gains.
+
+## gsyncio: Go-Powered Concurrency
+
+gsyncio is a hybrid Python-Go async execution system that allows blocking callbacks to run concurrently alongside an asyncio event loop **without using Python's `threading` module or `asyncio.to_thread`**. Instead, it spawns native Go goroutines that call back into Python via cffi (API mode) with proper GIL management.
+
+### Architecture
+
+```text
+Python Event Loop                                  Go Runtime
+     |                                                  |
+     |-- run_task_async(sync_callback) ---------------> |
+     |   (creates asyncio.Event + result_holder)        |
+     |   (spawns Go goroutine) -----------------------> |
+     |                                                  |-- calls Python callback via cffi FFI
+     |                                                  | -- GIL acquired/released automatically
+     |                                                  |
+     |   <---- loop.call_soon_threadsafe(event.set) ----|
+     |   (result stored in result_holder)               |
+     |   <-- asyncio.Event.wait() returns ------------- |
+     |   (result/exception delivered to event loop)     |
+```
+
+The system has three layers:
+
+1. **Go native library** - CGo shared library (`gsyncio.go`) exports functions for spawning cancellable goroutines, canceling by task ID, and atomic task ID generation. Each goroutine holds a function pointer to the Python callback and checks a shared cancellation flag each loop iteration.
+
+2. **Python cffi wrapper** - loads the compiled shared library (`.so` on Linux, `.pyd` on Windows) via `ffi.dlopen()`, resolves C function signatures automatically from the cffi `cdef` declarations, and provides `StartGoTaskWithResult()`, `CancelGoTask()`, and `get_next_task_id()` as Python-callable functions. Live cffi callback objects are kept in a list to prevent garbage collection. GIL acquire/release function pointers are resolved at runtime via ctypes against the running interpreter, then passed to Go goroutines so each callback enters Python with the GIL held. The compiled cffi extension (`gsyncio_cffi`) links against both libpython and the Go shared library at build time, and is distributed alongside `gsyncio.{so|pyd}`.
+
+3. **Higher-level orchestration** - `run_task_async()` (in `utils.py`) routes callbacks through three paths:
+   - **Coroutine callback** -> pure asyncio `create_task()` (no Go involved)
+   - **gsyncio available** -> spawns Go goroutine with result capture via `asyncio.Event` + `call_soon_threadsafe()` bridge
+   - **gsyncio unavailable, sync callback** -> falls back to `asyncio.to_thread()` (ThreadPoolExecutor)
+
+Even in the gsyncio path, callbacks are wrapped in an asyncio `Task` and returned as a `CancelableTask`, providing a uniform interface. The `CancelableTask` tracks both the asyncio task (for `done()`, `result()`, `exception()`) and a Go-assigned task ID (for Go-level cancellation via `cancel()`).
+
+### When to Use gsyncio
+
+- **High concurrent client counts** (>2x your CPU core count, or 16+ clients on any machine)
+- **Blocking I/O in callbacks** - database queries, file operations, or any synchronous call that would block the event loop
+- **CPU-bound work** competing for the GIL across many simultaneous handlers
+- **Connection burst handling** - when many clients connect simultaneously and `client_accepters` alone isn't enough
+
+### When NOT to Use gsyncio
+
+- **Low client counts** (a handful of clients) - asyncio is simpler and has zero build dependency
+- **Simple scripts or single-client tools** - the Go compilation step adds unnecessary complexity
+- **Environments without Go installed** - while Pipebomb gracefully falls back to `asyncio.to_thread()`, you lose the Go goroutine advantages
+
+### Build Requirements
+
+When building from source (not via pip/uv index), gsyncio requires:
+
+- **Go 1.21+** installed and in PATH
+- **CGo enabled** (`CGO_ENABLED=1`) - the Go compiler must be able to call into Python's C API
+
+The hatch build hook (`hatch_build.py`) handles compilation automatically during `uv sync` or `uv build`. If Go is not found, it skips gsyncio compilation and packages a pure-Python fallback (using `asyncio.to_thread()` instead). The compiled shared library is bundled into the wheel at `pipebomb/gsyncio/gsyncio.{so|pyd}`.
 
 ## Protocol Reference
 

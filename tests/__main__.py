@@ -7,10 +7,6 @@ rc = os.system("uv build --wheel")
 if rc != 0:
     print("Failed to build package")
 
-sys.path.insert(0, str(Path(__file__).parent.parent.resolve() / "dist"))
-from pipebomb.server import NewClientTicket, Server, serialize  # noqa: E402
-from pipebomb.utils import Request, Response  # noqa: E402
-
 rc = os.system("uv pip install --group tests")
 if rc != 0:
     print(f"Failed to install required test packages. Return Code: {rc}")
@@ -19,16 +15,23 @@ if rc != 0:
 async def create_files():
     if not (Path(__file__).parent / "test_serialized.bin").exists():
         uuid = b"a" * 36
+        from pipebomb.server import Server
         server = Server()
 
         queue = asyncio.Queue()
-        await queue.put(Request(uuid, b"test", b"test", uuid))
+        await queue.put(
+            __import__("pipebomb.utils", fromlist=["Request"]).Request(
+                uuid, b"test", b"test", uuid
+            )
+        )
 
-        res = Response(b"test", b"test", uuid)
+        res = __import__("pipebomb.utils", fromlist=["Response"]).Response(b"test", b"test", uuid)
 
         await server.add_client(
-            NewClientTicket(uuid.decode("latin1"), ["test0"], queue, {uuid: res})
-        )  # pyright: ignore[reportArgumentType]
+            __import__("pipebomb.server", fromlist=["NewClientTicket"]).NewClientTicket(
+                uuid.decode("latin1"), ["test0"], queue, {uuid: res}
+            )
+        )
 
         await server.add_key("test1", uuid.decode("latin1"))
         await server.add_key("test2", uuid.decode("latin1"))
@@ -36,7 +39,7 @@ async def create_files():
 
         server[b"test"] = b"test"
 
-        serialized = await serialize(server)
+        serialized = await __import__("pipebomb.server", fromlist=["serialize"]).serialize(server)
         with open(Path(__file__).parent / "test_serialized.bin", "wb") as f:
             f.write(serialized)
 

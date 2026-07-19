@@ -192,7 +192,7 @@ class Server(metaclass=ServerMeta):
         self.keep_dead_sessions = keep_dead_sessions
         self._multithreaded = multithreaded
         if not multithreaded:
-            logger.info("Using Asyncio for tasks")
+            logger.info("Using asyncio for tasks")
             _gsyncio_available = False
         else:
             _gsyncio_available = _init_gsyncio()
@@ -200,7 +200,7 @@ class Server(metaclass=ServerMeta):
                 logger.warning("multithreaded=True but gsyncio is unavailable")
                 self._multithreaded = False
             else:
-                logger.info("Using Gsyncio for tasks")
+                logger.info("Using gsyncio for tasks")
         
             
             

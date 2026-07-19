@@ -17,12 +17,13 @@ skips = ["B110"]
 exclude_dirs = [".venv", "tests", "dist"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "cffi", "setuptools"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
 should_use_gsyncio = true
+compiled_sdist = false
 
 [tool.hatch.build.targets.wheel]
 exclude = [
@@ -44,12 +45,13 @@ exclude = [
 [project]
 name = "pipebomb"
 version = "1.0.0"
-description = "You just got mailed a pipe bomb!"
+description = "You just got mailed a pipebomb!"
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "cryptography>=49.0.0",
     "zstandard>=0.25.0",
     "nest_asyncio>=1.6.0",
+    "cffi>=2.1.0",
 ]
 readme = "README.md"
 
